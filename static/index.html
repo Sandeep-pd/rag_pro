@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG & Summarization Workbench</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-icon">📚</div>
+      <div class="brand-title">
+        <h1>RAG Pro Workbench</h1>
+        <p>100+ PDF Ingestion, Vector Search & Summarization</p>
+      </div>
+    </div>
+    <div class="health-badge" id="healthBadge">
+      <div class="dot"></div>
+      <span id="healthText">Connecting...</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Navigation Tabs -->
+    <nav class="tabs">
+      <button class="tab-btn active" onclick="switchTab('docsTab')">
+        📁 Ingest & Documents
+      </button>
+      <button class="tab-btn" onclick="switchTab('queryTab')">
+        ❓ Ask Questions (Q&A)
+      </button>
+      <button class="tab-btn" onclick="switchTab('summarizeTab')">
+        📝 Summarize PDFs
+      </button>
+    </nav>
+
+    <!-- Tab 1: Documents & Ingestion -->
+    <div id="docsTab" class="tab-content active">
+      <!-- Folder Batch Ingestion -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Batch Directory Ingestion (100+ PDFs)</h2>
+          <p>Provide a local folder path to automatically scan and ingest all PDF files into Chroma DB.</p>
+        </div>
+        <div class="form-group">
+          <label for="dirPath">Folder Path</label>
+          <input type="text" id="dirPath" class="input-text" placeholder="e.g., C:/Users/documents/pdf_folder">
+        </div>
+        <button class="btn btn-primary" onclick="ingestDirectory()">
+          <span id="dirSpinner" class="spinner hidden"></span>
+          Scan & Ingest Directory
+        </button>
+        <div id="dirResult" class="output-box hidden"></div>
+      </div>
+
+      <!-- File Upload Ingestion -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Upload PDF Files</h2>
+          <p>Upload single or multiple PDF documents directly.</p>
+        </div>
+        <div class="dropzone" onclick="document.getElementById('fileInput').click()">
+          <div class="dropzone-icon">📄</div>
+          <p><strong>Click to select PDFs</strong> or drag files here</p>
+          <input type="file" id="fileInput" multiple accept=".pdf" style="display:none" onchange="uploadFiles()">
+        </div>
+        <div id="uploadResult" class="output-box hidden"></div>
+      </div>
+
+      <!-- Document Registry -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Indexed PDF Documents (<span id="docCount">0</span>)</h2>
+          <p>List of all documents currently loaded in vector store.</p>
+        </div>
+        <div id="docGrid" class="doc-grid">
+          <p style="color: var(--text-secondary)">Loading documents...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Ask Questions -->
+    <div id="queryTab" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Ask Questions across PDFs</h2>
+          <p>Query your document database using Gemini LLM and Chroma vector search.</p>
+        </div>
+        <div class="form-group">
+          <label for="filterSelect">Scope Query to Specific Document (Optional)</label>
+          <select id="filterSelect" class="select-input">
+            <option value="">All Documents</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="queryInput">Your Question</label>
+          <textarea id="queryInput" class="textarea-input" placeholder="What key findings or revenue numbers are discussed in the PDFs?"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="submitQuery()">
+          <span id="querySpinner" class="spinner hidden"></span>
+          Submit Question
+        </button>
+
+        <div id="queryAnswerBox" class="output-box hidden">
+          <h3 style="margin-bottom:0.5rem; color:var(--accent-primary)">Answer:</h3>
+          <div id="queryAnswer"></div>
+          <hr style="border:0; border-top:1px solid var(--border-color); margin:1rem 0;">
+          <h4 style="font-size:0.9rem; color:var(--text-secondary)">Retrieved Sources:</h4>
+          <div id="querySources"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Summarize PDFs -->
+    <div id="summarizeTab" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Document & Topic Summarization</h2>
+          <p>Generate structured executive summaries across specific documents or general topics.</p>
+        </div>
+        <div class="form-group">
+          <label for="sumDocSelect">Target Document to Summarize</label>
+          <select id="sumDocSelect" class="select-input">
+            <option value="">All Documents (Overall Corpus)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="topicInput">Specific Topic to Focus Summary On (Optional)</label>
+          <input type="text" id="topicInput" class="input-text" placeholder="e.g., Financial Performance, Security Risks, Market Growth">
+        </div>
+        <button class="btn btn-primary" onclick="submitSummarize()">
+          <span id="sumSpinner" class="spinner hidden"></span>
+          Generate Summary
+        </button>
+
+        <div id="sumAnswerBox" class="output-box hidden">
+          <h3 style="margin-bottom:0.5rem; color:var(--accent-success)">Executive Summary:</h3>
+          <div id="sumAnswer"></div>
+          <hr style="border:0; border-top:1px solid var(--border-color); margin:1rem 0;">
+          <h4 style="font-size:0.9rem; color:var(--text-secondary)">Sources Analyzed:</h4>
+          <div id="sumSources"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Tab switching logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      
+      event.currentTarget.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    // Load initial health & documents
+    async function loadStatus() {
+      try {
+        const hRes = await fetch('/health');
+        const hData = await hRes.json();
+        document.getElementById('healthText').innerText = hData.message || 'Connected';
+      } catch (e) {
+        document.getElementById('healthText').innerText = 'API Offline';
+      }
+
+      await loadDocuments();
+    }
+
+    async function loadDocuments() {
+      try {
+        const res = await fetch('/api/v1/documents');
+        const data = await res.json();
+        
+        document.getElementById('docCount').innerText = data.total_documents || 0;
+        
+        const grid = document.getElementById('docGrid');
+        const filterSel = document.getElementById('filterSelect');
+        const sumSel = document.getElementById('sumDocSelect');
+        
+        filterSel.innerHTML = '<option value="">All Documents</option>';
+        sumSel.innerHTML = '<option value="">All Documents (Overall Corpus)</option>';
+
+        if (!data.documents || data.documents.length === 0) {
+          grid.innerHTML = '<p style="color: var(--text-secondary)">No documents ingested yet.</p>';
+          return;
+        }
+
+        grid.innerHTML = '';
+        data.documents.forEach(doc => {
+          grid.innerHTML += `
+            <div class="doc-card">
+              <div class="doc-icon">📑</div>
+              <div class="doc-name">${doc}</div>
+            </div>
+          `;
+          
+          filterSel.innerHTML += `<option value="${doc}">${doc}</option>`;
+          sumSel.innerHTML += `<option value="${doc}">${doc}</option>`;
+        });
+      } catch (e) {
+        console.error("Error loading documents:", e);
+      }
+    }
+
+    // Ingest Directory
+    async function ingestDirectory() {
+      const path = document.getElementById('dirPath').value.trim();
+      if (!path) return alert("Please enter a directory path.");
+
+      const spinner = document.getElementById('dirSpinner');
+      const box = document.getElementById('dirResult');
+      spinner.classList.remove('hidden');
+      box.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/v1/ingest/directory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ directory_path: path })
+        });
+        const data = await res.json();
+        box.classList.remove('hidden');
+        if (res.ok) {
+          box.innerHTML = `<strong style="color:var(--accent-success)">Success!</strong> ${data.message} (${data.chunks_processed} chunks created)`;
+          await loadDocuments();
+        } else {
+          box.innerHTML = `<strong style="color:var(--accent-warning)">Error:</strong> ${data.detail || 'Failed to ingest directory'}`;
+        }
+      } catch (e) {
+        box.classList.remove('hidden');
+        box.innerHTML = `<strong style="color:var(--accent-warning)">Error:</strong> ${e.message}`;
+      } finally {
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // Upload Files
+    async function uploadFiles() {
+      const fileInput = document.getElementById('fileInput');
+      if (!fileInput.files.length) return;
+
+      const box = document.getElementById('uploadResult');
+      box.classList.remove('hidden');
+      box.innerText = "Uploading and ingesting PDFs...";
+
+      const formData = new FormData();
+      for (let file of fileInput.files) {
+        formData.append('files', file);
+      }
+
+      try {
+        const res = await fetch('/api/v1/ingest/batch', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          box.innerHTML = `<strong style="color:var(--accent-success)">Success!</strong> Ingested ${data.files_processed.length} PDFs (${data.chunks_processed} chunks created).`;
+          await loadDocuments();
+        } else {
+          box.innerHTML = `<strong style="color:var(--accent-warning)">Error:</strong> ${data.detail || 'Upload failed'}`;
+        }
+      } catch (e) {
+        box.innerHTML = `<strong style="color:var(--accent-warning)">Error:</strong> ${e.message}`;
+      }
+    }
+
+    // Q&A Query
+    async function submitQuery() {
+      const q = document.getElementById('queryInput').value.trim();
+      const filter = document.getElementById('filterSelect').value;
+      if (!q) return alert("Please enter a question.");
+
+      const spinner = document.getElementById('querySpinner');
+      const box = document.getElementById('queryAnswerBox');
+      spinner.classList.remove('hidden');
+      box.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/v1/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, filename_filter: filter || null })
+        });
+        const data = await res.json();
+        spinner.classList.add('hidden');
+        box.classList.remove('hidden');
+
+        if (res.ok) {
+          document.getElementById('queryAnswer').innerHTML = marked.parse(data.answer);
+          const srcContainer = document.getElementById('querySources');
+          srcContainer.innerHTML = '';
+          (data.sources || []).forEach(src => {
+            srcContainer.innerHTML += `<span class="sources-tag">📄 ${src}</span>`;
+          });
+        } else {
+          document.getElementById('queryAnswer').innerText = "Error: " + (data.detail || 'Failed to query.');
+        }
+      } catch (e) {
+        spinner.classList.add('hidden');
+        box.classList.remove('hidden');
+        document.getElementById('queryAnswer').innerText = "Error: " + e.message;
+      }
+    }
+
+    // Summarize
+    async function submitSummarize() {
+      const filter = document.getElementById('sumDocSelect').value;
+      const topic = document.getElementById('topicInput').value.trim();
+
+      const spinner = document.getElementById('sumSpinner');
+      const box = document.getElementById('sumAnswerBox');
+      spinner.classList.remove('hidden');
+      box.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/v1/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename_filter: filter || null,
+            topic_or_query: topic || null
+          })
+        });
+        const data = await res.json();
+        spinner.classList.add('hidden');
+        box.classList.remove('hidden');
+
+        if (res.ok) {
+          document.getElementById('sumAnswer').innerHTML = marked.parse(data.summary);
+          const srcContainer = document.getElementById('sumSources');
+          srcContainer.innerHTML = '';
+          (data.sources_used || []).forEach(src => {
+            srcContainer.innerHTML += `<span class="sources-tag">📄 ${src}</span>`;
+          });
+        } else {
+          document.getElementById('sumAnswer').innerText = "Error: " + (data.detail || 'Failed to summarize.');
+        }
+      } catch (e) {
+        spinner.classList.add('hidden');
+        box.classList.remove('hidden');
+        document.getElementById('sumAnswer').innerText = "Error: " + e.message;
+      }
+    }
+
+    // Initialize on load
+    window.onload = loadStatus;
+  </script>
+</body>
+</html>
