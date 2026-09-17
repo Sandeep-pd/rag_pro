@@ -44,6 +44,7 @@ jobs:
               --name rag_pro \
               -p 8003:8003 \
               --env-file /home/ec2-user/.env \
+              -v rag_chroma:/app/chroma_db \
               sandeep0030/rag_pro:latest
 
             docker image prune -f
